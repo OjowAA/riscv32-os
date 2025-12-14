@@ -7,6 +7,7 @@
 
 #define PROC_UNUSED   0   // Unused process control structure
 #define PROC_RUNNABLE 1   // Runnable process
+#define PROC_EXITED   2
 
 #define SATP_SV32 (1u << 31)
 #define PAGE_V    (1 << 0)   // "Valid" bit (entry is enabled)
@@ -18,6 +19,8 @@
 #define USER_BASE 0x1000000
 
 #define SSTATUS_SPIE (1 << 5)
+#define SCAUSE_ECALL 8
+
 
 struct process {
     int pid;             // Process ID
@@ -59,7 +62,8 @@ struct trap_frame {
     uint32_t s10;
     uint32_t s11;
     uint32_t sp;
-} __attribute__((packed));
+};
+//  __attribute__((packed));
 
 #define READ_CSR(reg)                                                          \
     ({                                                                         \

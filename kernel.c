@@ -47,6 +47,15 @@ struct sbiret sbi_call(long arg0, long arg1, long arg2, long arg3, long arg4,
     return (struct sbiret){.error = a0, .value = a1};
 }
 
+void putchar(char ch) {
+    sbi_call(ch, 0, 0, 0, 0, 0, 0, 1 /* Console Putchar */);
+}
+
+long getchar(void) {
+    struct sbiret ret = sbi_call(0, 0, 0, 0, 0, 0, 0, 2);
+    return ret.error;
+}
+
 void map_page(uint32_t *table1, uint32_t vaddr, paddr_t paddr, uint32_t flags) {
     if (!is_aligned(vaddr, PAGE_SIZE))
         PANIC("unaligned vaddr %x", vaddr);
@@ -262,53 +271,122 @@ void kernel_entry(void) {
 
         "mv a0, sp\n"
         "call handle_trap\n"
+
+        "lw ra,  4 * 0(sp)\n"
+        "lw gp,  4 * 1(sp)\n"
+        "lw tp,  4 * 2(sp)\n"
+        "lw t0,  4 * 3(sp)\n"
+        "lw t1,  4 * 4(sp)\n"
+        "lw t2,  4 * 5(sp)\n"
+        "lw t3,  4 * 6(sp)\n"
+        "lw t4,  4 * 7(sp)\n"
+        "lw t5,  4 * 8(sp)\n"
+        "lw t6,  4 * 9(sp)\n"
+        "lw a0,  4 * 10(sp)\n"
+        "lw a1,  4 * 11(sp)\n"
+        "lw a2,  4 * 12(sp)\n"
+        "lw a3,  4 * 13(sp)\n"
+        "lw a4,  4 * 14(sp)\n"
+        "lw a5,  4 * 15(sp)\n"
+        "lw a6,  4 * 16(sp)\n"
+        "lw a7,  4 * 17(sp)\n"
+        "lw s0,  4 * 18(sp)\n"
+        "lw s1,  4 * 19(sp)\n"
+        "lw s2,  4 * 20(sp)\n"
+        "lw s3,  4 * 21(sp)\n"
+        "lw s4,  4 * 22(sp)\n"
+        "lw s5,  4 * 23(sp)\n"
+        "lw s6,  4 * 24(sp)\n"
+        "lw s7,  4 * 25(sp)\n"
+        "lw s8,  4 * 26(sp)\n"
+        "lw s9,  4 * 27(sp)\n"
+        "lw s10, 4 * 28(sp)\n"
+        "lw s11, 4 * 29(sp)\n"
+        "lw sp,  4 * 30(sp)\n"
+        "sret\n"
     );
+}
+
+void handle_syscall(struct trap_frame *f) {
+    switch (f->a3) {
+        case SYS_PUTCHAR:
+            putchar(f->a0);
+            break;
+        case SYS_GETCHAR:
+            while (1) {
+                long ch = getchar();
+                if (ch >= 0) {
+                    f->a0 = ch;
+                    break;
+                }
+
+                yield();
+            }
+            break;
+        case SYS_EXIT:
+            printf("process %d exited\n", current_proc->pid);
+            current_proc->state = PROC_EXITED;
+            yield();
+            PANIC("unreachable");
+        // case SYS_READFILE:
+        // case SYS_WRITEFILE: {
+        //     const char *filename = (const char *) f->a0;
+        //     char *buf = (char *) f->a1;
+        //     int len = f->a2;
+        //     struct file *file = fs_lookup(filename);
+        //     if (!file) {
+        //         printf("file not found: %s\n", filename);
+        //         f->a0 = -1;
+        //         break;
+        //     }
+
+        //     if (len > (int) sizeof(file->data))
+        //         len = file->size;
+
+        //     if (f->a3 == SYS_WRITEFILE) {
+        //         memcpy(file->data, buf, len);
+        //         file->size = len;
+        //         fs_flush();
+        //     } else {
+        //         memcpy(buf, file->data, len);
+        //     }
+
+        //     f->a0 = len;
+        //     break;
+        // }
+        default:
+            PANIC("unexpected syscall a3=%x\n", f->a3);
+    }
 }
 
 void handle_trap(struct trap_frame *f) {
     uint32_t scause = READ_CSR(scause);
     uint32_t stval = READ_CSR(stval);
     uint32_t user_pc = READ_CSR(sepc);
-
-    PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
-}
-
-void delay(void) {
-    for (int i = 0; i < 30000000; i++)
-        __asm__ __volatile__("nop"); // do nothing
-}
-
-void proc_a_entry(void) {
-    printf("starting process A\n");
-    while (1) {
-        putchar('A');
-        yield();
+    if (scause == SCAUSE_ECALL) {
+        handle_syscall(f);
+        user_pc += 4;
+    } else {
+        PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
     }
-}
 
-void proc_b_entry(void) {
-    printf("starting process B\n");
-    while (1) {
-        putchar('B');
-        yield();
-    }
+    WRITE_CSR(sepc, user_pc);
 }
 
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
-
     printf("\n\n");
-
     WRITE_CSR(stvec, (uint32_t) kernel_entry);
+    // virtio_blk_init();
+    // fs_init();
 
-    idle_proc = create_process(NULL, 0); // updated!
+    idle_proc = create_process(NULL, 0);
     idle_proc->pid = 0; // idle
     current_proc = idle_proc;
 
-    // new!
     create_process(_binary_shell_bin_start, (size_t) _binary_shell_bin_size);
-
     yield();
+
     PANIC("switched to idle process");
 }
 
@@ -316,9 +394,9 @@ __attribute__((section(".text.boot")))
 __attribute__((naked))
 void boot(void) {
     __asm__ __volatile__(
-        "mv sp, %[stack_top]\n" // Set the stack pointer
-        "j kernel_main\n"       // Jump to the kernel main function
+        "mv sp, %[stack_top]\n"
+        "j kernel_main\n"
         :
-        : [stack_top] "r" (__stack_top) // Pass the stack top address as %[stack_top]
+        : [stack_top] "r" (__stack_top)
     );
 }

@@ -2,8 +2,10 @@
 
 extern char __stack_top[];
 
-__attribute__((noreturn)) void exit(void) {
-    for (;;);
+__attribute__((noreturn))
+void exit(void) {
+    syscall(SYS_EXIT, 0, 0, 0);
+    for (;;); // Just in case!
 }
 
 int syscall(int sysno, int arg0, int arg1, int arg2) {
@@ -22,6 +24,10 @@ int syscall(int sysno, int arg0, int arg1, int arg2) {
 
 void putchar(char ch) {
     syscall(SYS_PUTCHAR, ch, 0, 0);
+}
+
+int getchar(void) {
+    return syscall(SYS_GETCHAR, 0, 0, 0);
 }
 
 __attribute__((section(".text.start")))

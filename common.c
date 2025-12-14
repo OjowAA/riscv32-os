@@ -41,6 +41,7 @@ void printf(const char *fmt, ...) {
     va_start(vargs, fmt);
 
     while (*fmt) {
+
         if (*fmt == '%') {
             fmt++; // Skip '%'
             switch (*fmt) { // Read the next character
@@ -89,10 +90,16 @@ void printf(const char *fmt, ...) {
         } else {
             putchar(*fmt);
         }
-
         fmt++;
     }
 
 end:
     va_end(vargs);
+}
+
+void disp(const char *str) {
+    while (*str) {
+        putchar(*str);
+        str++;
+    }
 }
